@@ -1,0 +1,12 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run Flask app",
+			"type": "shell",
+			"command": ".\\.venv\\Scripts\\python.exe app.py",
+			"isBackground": true,
+			"problemMatcher": []
+		}
+	]
+}

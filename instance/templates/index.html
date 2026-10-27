@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dataset Nutritional Risk Classifier</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="container">
+    <header>
+      <div class="eyebrow">CHILD NUTRITION • DATASET CLASSIFIER</div>
+      <h1>Dataset Nutritional Risk Classifier</h1>
+      <p class="subtitle">Enter the child details used by your dataset.</p>
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+          <div class="auth-message {{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endwith %}
+      <div class="account-bar">
+        <span>Signed in as {{ session["user_email"] }}</span>
+        <nav class="page-links">
+          <a href="{{ url_for('index') }}">WHO growth assessment</a>
+          <form method="POST" action="{{ url_for('logout') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit">Sign out</button>
+          </form>
+        </nav>
+      </div>
+    </header>
+
+    <div class="notice">
+      {% if demo_mode %}
+        <strong>Demo mode:</strong> Overall risk uses only the 5 unverified example rows. It is not a reliable or medical risk assessment.
+      {% else %}
+        <strong>Dataset model:</strong> The classifier is loaded from your supplied dataset. Its result is not a medical diagnosis.
+      {% endif %}
+      Growth indicators below are calculated separately using WHO reference standards when the child is under 5.
+    </div>
+
+    <form method="POST" class="panel">
+      <h2>Child details</h2>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="grid">
+        <label for="birth-date">Date of birth
+          <input id="birth-date" type="date" name="birth_date" max="{{ today }}" required>
+        </label>
+        <label for="measurement-date">Measurement date
+          <input id="measurement-date" type="date" name="measurement_date" max="{{ today }}" value="{{ today }}" required>
+        </label>
+        <label for="gender">Gender
+          <select id="gender" name="Gender" required>
+            <option value="" selected disabled>Select</option>
+            <option>Male</option><option>Female</option>
+          </select>
+        </label>
+        <label for="height">Height (cm)
+          <input id="height" type="number" name="Height_cm" min="1" step="0.1" required>
+        </label>
+        <label for="weight">Weight (kg)
+          <input id="weight" type="number" name="Weight_kg" min="0.1" step="0.1" required>
+        </label>
+        <label for="meals">Meals per day
+          <input id="meals" type="number" name="Meals_Day" min="0" max="20" step="1" required>
+        </label>
+        <label for="fruits-veg">Fruits and vegetables
+          <select id="fruits-veg" name="Fruits_Veg" required>
+            <option value="" selected disabled>Select</option>
+            <option>Low</option><option>Medium</option><option>High</option>
+          </select>
+        </label>
+        <label for="protein">Protein
+          <select id="protein" name="Protein" required>
+            <option value="" selected disabled>Select</option>
+            <option>Low</option><option>Medium</option><option>High</option>
+          </select>
+        </label>
+        <label for="activity">Physical activity
+          <select id="activity" name="Physical_Activity" required>
+            <option value="" selected disabled>Select</option>
+            <option>Low</option><option>Normal</option><option>High</option>
+          </select>
+        </label>
+        <label for="illness">Previous illness
+          <select id="illness" name="Previous_Illness" required>
+            <option value="" selected disabled>Select</option>
+            <option>Yes</option><option>No</option>
+          </select>
+        </label>
+        <label for="sanitation">Sanitation
+          <select id="sanitation" name="Sanitation" required>
+            <option value="" selected disabled>Select</option>
+            <option>Poor</option><option>Good</option>
+          </select>
+        </label>
+        <label for="measurement-position">Height measurement position
+          <select id="measurement-position" name="measurement_position" required>
+            <option value="" selected disabled>Select</option>
+            <option value="length">Lying down (length)</option>
+            <option value="height">Standing (height)</option>
+          </select>
+        </label>
+        <label for="oedema">Bilateral pitting oedema status
+          <select id="oedema" name="oedema" required>
+            <option value="" selected disabled>Select</option>
+            <option value="no">Not present</option>
+            <option value="yes">Present</option>
+            <option value="unsure">Unsure / not assessed</option>
+          </select>
+        </label>
+      </div>
+      <p class="form-help">The exact dates calculate age for WHO growth references and the dataset. Under 2 years use lying-down length; from 2 years use standing height. If the other position was used, WHO's 0.7 cm adjustment is applied.</p>
+      <button type="submit">{% if demo_mode %}Show demo output{% else %}Run risk classifier{% endif %}</button>
+    </form>
+
+    {% if error %}
+      <section class="message error"><strong>Unable to predict</strong><p>{{ error }}</p></section>
+    {% endif %}
+
+    {% if result %}
+      <section id="results" class="message result risk-result" tabindex="-1" aria-live="polite">
+        <h2>Child details</h2>
+        <dl class="child-summary">
+          <div><dt>Age</dt><dd>{{ result.age_years }} years</dd></div>
+          <div><dt>Gender</dt><dd>{{ result.gender }}</dd></div>
+          <div><dt>Height</dt><dd>{{ result.height_cm }} cm</dd></div>
+          <div><dt>Weight</dt><dd>{{ result.weight_kg }} kg</dd></div>
+          <div><dt>Meals per day</dt><dd>{{ result.meals_day }}</dd></div>
+          <div><dt>Fruit intake</dt><dd>{{ result.fruits_veg }}</dd></div>
+          <div><dt>Protein intake</dt><dd>{{ result.protein }}</dd></div>
+          <div><dt>Physical activity</dt><dd>{{ result.physical_activity }}</dd></div>
+          <div><dt>Previous illness</dt><dd>{{ result.previous_illness }}</dd></div>
+          <div><dt>Sanitation</dt><dd>{{ result.sanitation }}</dd></div>
+        </dl>
+
+        <h2 class="result-section-title">Result</h2>
+        <div class="risk-panel">
+          <div class="eyebrow">{% if result.demo_mode %}DEMO NUTRITIONAL RISK • NOT A DIAGNOSIS{% else %}DATASET NUTRITIONAL RISK • NOT A DIAGNOSIS{% endif %}</div>
+          <div class="risk-label risk-{{ result.label|lower }}">
+            <span class="risk-dot" aria-hidden="true"></span>
+            <strong>{{ result.label|upper }} RISK</strong>
+          </div>
+          <p>Nearest-neighbor classifier vote: {{ result.votes }} of {{ result.neighbor_count }} records.</p>
+        </div>
+
+        <h2 class="result-section-title">WHO growth indicators</h2>
+        {% if result.screening %}
+          <ul class="indicator-list">
+            <li>
+              <span>Stunting (height-for-age)</span>
+              <strong>{{ result.screening.indicators[0].status }}</strong>
+              <p><strong>Precaution:</strong> {{ result.screening.indicators[0].precaution }}</p>
+            </li>
+            <li>
+              <span>Wasting (weight-for-height)</span>
+              <strong>{{ result.screening.indicators[2].status }}</strong>
+              <p><strong>Precaution:</strong> {{ result.screening.indicators[2].precaution }}</p>
+            </li>
+            <li>
+              <span>Underweight (weight-for-age)</span>
+              <strong>{{ result.screening.indicators[1].status }}</strong>
+              <p><strong>Precaution:</strong> {{ result.screening.indicators[1].precaution }}</p>
+            </li>
+          </ul>
+          <p class="result-note">WHO reference screening only, not a diagnosis. Weight-based indicators may be unavailable if oedema is present/unknown or measurements are outside the reference range.</p>
+        {% else %}
+          <p class="result-note">{{ result.screening_note }}</p>
+        {% endif %}
+
+        <h2 class="result-section-title">Reported inputs to review</h2>
+        {% if result.reported_factors %}
+          <ul class="factor-list">
+            {% for factor in result.reported_factors %}
+              <li>{{ factor }}</li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="result-note">No low-intake, illness, or sanitation responses were selected.</p>
+        {% endif %}
+
+        {% if result.demo_mode %}
+          <p class="result-note demo-warning">Overall risk label is only a software demo using five unverified examples. It has no established health meaning and must not be used for a child's care.</p>
+        {% else %}
+          <p class="result-note">This model reflects only the quality and representativeness of your supplied dataset. A qualified health professional must assess any health concerns.</p>
+        {% endif %}
+      </section>
+    {% endif %}
+
+    <footer>For screening and education only • Not a medical tool</footer>
+  </main>
+  {% if result %}
+    <script>
+      document.getElementById("results").scrollIntoView({ block: "start" });
+      document.getElementById("results").focus({ preventScroll: true });
+    </script>
+  {% endif %}
+</body>
+</html>

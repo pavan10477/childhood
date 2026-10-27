@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f8f7">
+  <title>WHO Child Growth Screening</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="screening-page">
+  <main class="screening-shell">
+    <header class="screening-header">
+      <a class="brand" href="{{ url_for('index') }}" aria-label="Child growth screening home">
+        <span class="brand-mark" aria-hidden="true">+</span>
+        <span><strong>GrowWell</strong><small>CHILD GROWTH SCREENING</small></span>
+      </a>
+      <nav class="screening-nav" aria-label="Account and tools">
+        <a href="{{ url_for('risk_classifier') }}">Dataset classifier <span aria-hidden="true">↗</span></a>
+        <span class="signed-in">{{ session["user_email"] }}</span>
+        <form method="POST" action="{{ url_for('logout') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="signout-button" type="submit">Sign out</button>
+        </form>
+      </nav>
+    </header>
+
+    <section class="screening-hero">
+      <div class="hero-copy">
+        <div class="hero-tag"><span aria-hidden="true">✳</span> GROWTH CHECK · AGES 0–5</div>
+        <h1>A little check-in<br>for a <em>healthier future.</em></h1>
+        <p>Enter a few measurements to screen your child's growth with WHO reference standards.</p>
+        <div class="hero-facts" aria-label="Screening details">
+          <span><strong>3</strong> growth indicators</span>
+          <span><strong>0–5</strong> years supported</span>
+          <span><strong>Private</strong> session-based</span>
+        </div>
+      </div>
+      <div class="hero-art" aria-hidden="true">
+        <div class="growth-orbit orbit-one"></div>
+        <div class="growth-orbit orbit-two"></div>
+        <div class="growth-leaf leaf-one"></div>
+        <div class="growth-leaf leaf-two"></div>
+        <div class="growth-ruler"><span>5</span><span>4</span><span>3</span><span>2</span><span>1</span></div>
+        <div class="growth-sun">✳</div>
+      </div>
+    </section>
+
+    <div class="screening-columns">
+      <section class="screening-main">
+        <form method="POST" class="screening-form">
+          <div class="form-heading">
+            <div>
+              <div class="form-kicker">CHILD PROFILE</div>
+              <h2>Let's start with the basics</h2>
+              <p>Use the child's most recent measurements.</p>
+            </div>
+            <span class="form-step">01 <i>/</i> 04</span>
+          </div>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="screening-input-grid">
+            <label for="age-years">
+              <span>Age <small>IN YEARS</small></span>
+              <input id="age-years" type="number" name="age_years" min="0" max="5" step="0.01" placeholder="e.g. 2.5" required>
+              <small class="field-hint">Enter a decimal for partial years</small>
+            </label>
+            <label for="sex">
+              <span>Sex <small>USED BY WHO REFERENCE</small></span>
+              <select id="sex" name="sex" required>
+                <option value="" selected disabled>Select sex</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+              </select>
+              <small class="field-hint">Select the matching growth reference</small>
+            </label>
+            <label for="length-height">
+              <span>Height / length <small>CM</small></span>
+              <input id="length-height" type="number" name="length_height_cm" min="1" step="0.1" placeholder="e.g. 86.5" required>
+              <small class="field-hint">Under 2 years: lying-down length</small>
+            </label>
+            <label for="weight">
+              <span>Weight <small>KG</small></span>
+              <input id="weight" type="number" name="weight_kg" min="0.1" step="0.1" placeholder="e.g. 12.4" required>
+              <small class="field-hint">Use the most recent measurement</small>
+            </label>
+          </div>
+          <div class="form-foot">
+            <p><span class="privacy-icon" aria-hidden="true">⌑</span> Your entries are used to create this screening report.</p>
+            <button class="screening-submit" type="submit">View growth report <span aria-hidden="true">→</span></button>
+          </div>
+          <p class="age-conversion-note">Age in years is converted internally to months and then to the nearest day for WHO reference calculations. References are available through 1826 days (about 5 years). From age 2, the reference assumes standing height; results may vary if measured differently.</p>
+        </form>
+
+        {% if error %}
+          <section class="message error screening-error" role="alert"><strong>Unable to calculate</strong><p>{{ error }}</p></section>
+        {% endif %}
+
+        {% if result %}
+          <section class="message result screening-result" aria-live="polite">
+            <div class="report-header">
+              <div>
+                <div class="form-kicker">SCREENING SUMMARY</div>
+                <h2>Child Nutrition Report</h2>
+              </div>
+              <span class="report-badge">WHO growth screen</span>
+            </div>
+            <p class="report-summary">Sample child: Age {{ result.age_years }} years · {{ result.gender }} · Height {{ result.height_cm }} cm · Weight {{ result.weight_kg }} kg</p>
+            <div class="report-overview">
+              <span class="overview-mark" aria-hidden="true">✳</span>
+              <div><small>OVERALL SCREENING</small><h3 class="overall-concern {% if result.overall_concern == 'LOW NUTRITIONAL CONCERN' %}concern-low{% else %}concern-high{% endif %}">{{ result.overall_concern }}</h3></div>
+            </div>
+            <ol class="report-indicators">
+              {% for indicator in result.report_indicators %}
+                <li class="{% if indicator.concern_level == 'Low Concern' %}concern-low{% elif indicator.concern_level == 'High Concern' %}concern-high{% else %}concern-unknown{% endif %}">
+                  <div class="indicator-heading">
+                    <span class="concern-icon" aria-hidden="true">{% if indicator.concern_level == 'Low Concern' %}✓{% elif indicator.concern_level == 'High Concern' %}!{% else %}?{% endif %}</span>
+                    <h3>{{ loop.index }}. {% if indicator.name == "Length/height-for-age" %}Stunting{% elif indicator.name == "Weight-for-age" %}Underweight{% else %}Wasting / overweight{% endif %}</h3>
+                    <span class="concern-chip"><strong>{{ indicator.concern_level }}</strong></span>
+                  </div>
+                  <p><strong>Precaution:</strong><span>{{ indicator.precaution }}</span></p>
+                </li>
+              {% endfor %}
+            </ol>
+            <p class="result-note"><strong>Disclaimer:</strong> This is a growth screening result, not a diagnosis. A qualified health professional should assess any concerns.</p>
+          </section>
+        {% endif %}
+      </section>
+
+      <aside class="screening-aside">
+        <section class="guide-card">
+          <div class="guide-icon" aria-hidden="true">⌁</div>
+          <div class="form-kicker">QUICK GUIDE</div>
+          <h2>Measure with care</h2>
+          <p>Small differences in age or measurement can affect a growth screening result.</p>
+          <ul>
+            <li><span class="guide-number">01</span><span><strong>Age matters</strong><small>Enter age as accurately as you can.</small></span></li>
+            <li><span class="guide-number">02</span><span><strong>Check posture</strong><small>Measure lying down below 2 years; standing from 2 years.</small></span></li>
+            <li><span class="guide-number">03</span><span><strong>Use reliable values</strong><small>Record height in centimetres and weight in kilograms.</small></span></li>
+          </ul>
+        </section>
+        <section class="indicator-guide">
+          <div class="form-kicker">WHAT WE SCREEN</div>
+          <div><span class="mini-indicator mini-height" aria-hidden="true">↟</span><span><strong>Stunting</strong><small>Height for age</small></span></div>
+          <div><span class="mini-indicator mini-weight" aria-hidden="true">◉</span><span><strong>Underweight</strong><small>Weight for age</small></span></div>
+          <div><span class="mini-indicator mini-wasting" aria-hidden="true">⌁</span><span><strong>Wasting / overweight</strong><small>Weight for height</small></span></div>
+        </section>
+        <p class="screening-disclaimer"><strong>For screening only</strong><br>These WHO-standard indicators do not provide a diagnosis. A qualified health professional should interpret results. This quick screen assumes no bilateral pitting oedema.</p>
+      </aside>
+    </div>
+
+    <footer class="screening-footer"><span>GrowWell · Child growth screening</span><span>Educational prototype · Not a medical tool</span></footer>
+  </main>
+</body>
+</html>

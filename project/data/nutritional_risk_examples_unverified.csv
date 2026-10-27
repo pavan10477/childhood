@@ -1,0 +1,6 @@
+Age,Gender,Height_cm,Weight_kg,Meals_Day,Fruits_Veg,Protein,Physical_Activity,Previous_Illness,Sanitation,Nutritional_Risk
+2,Male,82,9.5,3,Low,Low,Low,Yes,Poor,High
+3,Female,94,13,4,Medium,Medium,Normal,No,Good,Low
+4,Male,98,14,3,Medium,Low,Normal,Yes,Good,Moderate
+5,Female,108,17,4,High,High,High,No,Good,Low
+2,Female,78,8,2,Low,Low,Low,Yes,Poor,High

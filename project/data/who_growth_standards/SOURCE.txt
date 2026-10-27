@@ -1,0 +1,12 @@
+These WHO Child Growth Standards LMS reference tables are distributed with the
+World Health Organization's anthro R package:
+
+https://github.com/WorldHealthOrganization/anthro/tree/b776d8a12b1c97369c748b561159fd2ec4f4db58/data-raw/growthstandards
+
+Source revision: b776d8a12b1c97369c748b561159fd2ec4f4db58
+Files: lenanthro.txt, weianthro.txt, wflanthro.txt, wfhanthro.txt
+The source package declares GPL-3. Its license is included as LICENSE.md.
+
+WHO package z-score conventions and official reference data are used for this
+screening implementation. The app is not WHO Anthro software and does not
+replace WHO tools, trained measurement, or clinical assessment.

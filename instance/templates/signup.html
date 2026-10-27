@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign up | Child Nutrition Risk Demo</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="login-page">
+  <main class="login-card">
+    <div class="login-mark" aria-hidden="true">CN</div>
+    <div class="eyebrow">PUBLIC HEALTH • STUDENT PROJECT</div>
+    <h1>Create your account</h1>
+    <p class="subtitle">Sign up to access the child nutrition risk demo.</p>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <div class="auth-message {{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    <form class="login-form" method="POST" action="{{ url_for('signup') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label for="email">Email address
+        <input id="email" name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+      </label>
+      <label for="password">Password
+        <input id="password" name="password" type="password" autocomplete="new-password" minlength="8" placeholder="At least 8 characters" required>
+      </label>
+      <label for="confirm-password">Confirm password
+        <input id="confirm-password" name="confirm_password" type="password" autocomplete="new-password" minlength="8" placeholder="Enter your password again" required>
+      </label>
+      <button type="submit">Create account</button>
+    </form>
+
+    <p class="auth-switch">Already have an account? <a href="{{ url_for('login') }}">Sign in</a></p>
+    <footer>Educational prototype only • Not a medical tool</footer>
+  </main>
+</body>
+</html>

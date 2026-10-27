@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Child Nutrition Risk Demo</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="container">
+    <header>
+      <div class="eyebrow">PUBLIC HEALTH • MACHINE LEARNING DEMO</div>
+      <h1>Childhood Malnutrition Risk</h1>
+      <p class="subtitle">Enter a child's details to test the demonstration classifier.</p>
+    </header>
+
+    <div class="notice">
+      <strong>Important:</strong> This is an educational prototype, not a medical tool.
+      The bundled dataset is synthetic. Do not use predictions to diagnose or treat a child.
+      Real assessment requires appropriate WHO growth standards and qualified health guidance.
+    </div>
+
+    <form method="POST" class="panel">
+      <h2>Child details</h2>
+      <div class="grid">
+        <label>Age (months)
+          <input type="number" name="age_months" min="0" max="60" required value="36">
+        </label>
+        <label>Sex
+          <select name="sex" required>
+            <option value="Male">Male</option><option value="Female">Female</option>
+          </select>
+        </label>
+        <label>Height / length (cm)
+          <input type="number" name="height_cm" min="1" step="0.1" required value="95">
+        </label>
+        <label>Weight (kg)
+          <input type="number" name="weight_kg" min="0.1" step="0.1" required value="13">
+        </label>
+        <label>Meals per day
+          <select name="meals_per_day">
+            <option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option><option>6</option>
+          </select>
+        </label>
+        <label>Fruit & vegetable intake
+          <select name="fruit_veg"><option>Low</option><option selected>Medium</option><option>High</option></select>
+        </label>
+        <label>Protein-rich food intake
+          <select name="protein_food"><option>Low</option><option selected>Medium</option><option>High</option></select>
+        </label>
+        <label>Appetite
+          <select name="appetite"><option>Good</option><option selected>Average</option><option>Poor</option></select>
+        </label>
+        <label>Previous illness
+          <select name="previous_illness"><option>No</option><option>Yes</option></select>
+        </label>
+        <label>Immunization status
+          <select name="immunization"><option>Complete</option><option>Partial</option><option>Not_taken</option></select>
+        </label>
+        <label>Sanitation
+          <select name="sanitation"><option>Good</option><option>Poor</option></select>
+        </label>
+      </div>
+      <button type="submit">Predict demo risk</button>
+    </form>
+
+    {% if error %}
+      <section class="message error"><strong>Unable to predict</strong><p>{{ error }}</p></section>
+    {% endif %}
+
+    {% if result %}
+      <section class="message result">
+        <div class="eyebrow">DEMO MODEL OUTPUT</div>
+        <h2>{{ result.label }}</h2>
+        <p>{{ result.note }}</p>
+      </section>
+    {% endif %}
+
+    <footer>Student project template • Flask + scikit-learn</footer>
+  </main>
+</body>
+</html>
