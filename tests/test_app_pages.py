@@ -122,8 +122,106 @@ class AppPageTests(unittest.TestCase):
             response = self.client.get("/forgot-password")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Password reset email is not configured", response.data)
+        self.assertIn(b"Email sending is disabled", response.data)
+        self.assertIn(b"SMTP_USERNAME and SMTP_PASSWORD", response.data)
         self.assertIn(b"disabled", response.data)
+
+    def test_outlook_defaults_enable_recovery_when_credentials_are_configured(self):
+        with patch.dict(
+            os.environ,
+            {
+                "SMTP_USERNAME": "support@outlook.com",
+                "SMTP_PASSWORD": "test-mail-password",
+            },
+            clear=True,
+        ):
+            response = self.client.get("/forgot-password")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Send verification code", response.data)
+        self.assertNotIn(b'<button type="submit" disabled>', response.data)
+
+    def test_send_email_uses_outlook_defaults_and_authenticates(self):
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "SMTP_USERNAME": "support@outlook.com",
+                    "SMTP_PASSWORD": "test-mail-password",
+                },
+                clear=True,
+            ),
+            patch.object(app_module.smtplib, "SMTP") as smtp_factory,
+            patch.object(app_module.ssl, "create_default_context"),
+        ):
+            smtp = smtp_factory.return_value.__enter__.return_value
+            app_module.send_password_reset_email(
+                "member@example.com", "012345"
+            )
+
+        smtp_factory.assert_called_once_with(
+            "smtp-mail.outlook.com", 587, timeout=10
+        )
+        smtp.login.assert_called_once_with(
+            "support@outlook.com", "test-mail-password"
+        )
+        message = smtp.send_message.call_args.args[0]
+        self.assertEqual(message["From"], "support@outlook.com")
+        self.assertEqual(message["To"], "member@example.com")
+        self.assertIn("012345", message.get_content())
+
+    def test_password_reset_schema_adds_attempts_to_existing_database(self):
+        database_path = os.path.join(self.temp_dir.name, "legacy.sqlite3")
+        with app_module.closing(
+            app_module.sqlite3.connect(database_path)
+        ) as db:
+            db.execute(
+                """
+                CREATE TABLE users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL
+                )
+                """
+            )
+            db.execute(
+                """
+                CREATE TABLE password_reset_tokens (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    token_hash TEXT NOT NULL UNIQUE,
+                    expires_at INTEGER NOT NULL
+                )
+                """
+            )
+            db.execute(
+                "INSERT INTO users (email, password_hash) VALUES (?, ?)",
+                ("member@example.com", "old-hash"),
+            )
+            db.execute(
+                """
+                INSERT INTO password_reset_tokens
+                    (user_id, token_hash, expires_at)
+                VALUES (?, ?, ?)
+                """,
+                (1, "legacy-hash", 1234567890),
+            )
+            db.commit()
+
+        current_database = app_module.app.config["DATABASE"]
+        app_module.app.config["DATABASE"] = database_path
+        try:
+            app_module.init_db()
+        finally:
+            app_module.app.config["DATABASE"] = current_database
+
+        with app_module.closing(
+            app_module.sqlite3.connect(database_path)
+        ) as db:
+            token = db.execute(
+                "SELECT attempts FROM password_reset_tokens"
+            ).fetchone()
+        self.assertEqual(token, (0,))
 
     def test_forgot_password_sends_email_without_revealing_account_existence(self):
         with app_module.closing(
@@ -136,9 +234,8 @@ class AppPageTests(unittest.TestCase):
             db.commit()
 
         mail_config = {
-            "SMTP_HOST": "smtp.example.com",
-            "SMTP_FROM": "support@example.com",
-            "PUBLIC_BASE_URL": "https://growwell.example",
+            "SMTP_USERNAME": "support@example.com",
+            "SMTP_PASSWORD": "test-mail-password",
         }
         with (
             patch.dict(os.environ, mail_config, clear=True),
@@ -160,17 +257,131 @@ class AppPageTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Enter your verification code", response.data)
         self.assertIn(b"If an account matches that email address", response.data)
         self.assertEqual(unknown_account_response.data, response.data)
         send_email.assert_called_once()
         self.assertEqual(send_email.call_args.args[0], "member@example.com")
+        code = send_email.call_args.args[1]
+        self.assertRegex(code, r"^[0-9]{6}$")
         with app_module.closing(
             app_module.sqlite3.connect(app_module.app.config["DATABASE"])
         ) as db:
-            token_hash = db.execute(
+            stored_code = db.execute(
                 "SELECT token_hash FROM password_reset_tokens"
             ).fetchone()[0]
-        self.assertEqual(len(token_hash), 64)
+        self.assertEqual(stored_code, app_module.password_reset_code_hash(code))
+
+    def test_password_reset_code_updates_password_and_is_single_use(self):
+        with app_module.closing(
+            app_module.sqlite3.connect(app_module.app.config["DATABASE"])
+        ) as db:
+            db.execute(
+                "INSERT INTO users (email, password_hash) VALUES (?, ?)",
+                ("member@example.com", "old-hash"),
+            )
+            db.commit()
+
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "SMTP_USERNAME": "support@example.com",
+                    "SMTP_PASSWORD": "test-mail-password",
+                },
+                clear=True,
+            ),
+            patch.object(app_module, "send_password_reset_email") as send_email,
+        ):
+            sent = self.client.post(
+                "/forgot-password",
+                data={
+                    "csrf_token": "test-csrf",
+                    "action": "send_code",
+                    "email": "member@example.com",
+                },
+            )
+        self.assertIn(b"Enter your verification code", sent.data)
+        code = send_email.call_args.args[1]
+
+        response = self.client.post(
+            "/forgot-password",
+            data={
+                "csrf_token": "test-csrf",
+                "action": "reset_password",
+                "code": code,
+                "password": "new-strong-password",
+                "confirm_password": "new-strong-password",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], "/login")
+
+        with app_module.closing(
+            app_module.sqlite3.connect(app_module.app.config["DATABASE"])
+        ) as db:
+            password_hash = db.execute(
+                "SELECT password_hash FROM users WHERE email = ?",
+                ("member@example.com",),
+            ).fetchone()[0]
+            remaining_codes = db.execute(
+                "SELECT COUNT(*) FROM password_reset_tokens"
+            ).fetchone()[0]
+        self.assertTrue(
+            app_module.check_password_hash(password_hash, "new-strong-password")
+        )
+        self.assertEqual(remaining_codes, 0)
+
+    def test_password_reset_code_is_limited_to_five_attempts(self):
+        with app_module.closing(
+            app_module.sqlite3.connect(app_module.app.config["DATABASE"])
+        ) as db:
+            db.execute(
+                "INSERT INTO users (email, password_hash) VALUES (?, ?)",
+                ("member@example.com", "old-hash"),
+            )
+            db.commit()
+
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "SMTP_USERNAME": "support@example.com",
+                    "SMTP_PASSWORD": "test-mail-password",
+                },
+                clear=True,
+            ),
+            patch.object(app_module, "send_password_reset_email"),
+            patch.object(app_module.secrets, "randbelow", return_value=12345),
+        ):
+            self.client.post(
+                "/forgot-password",
+                data={
+                    "csrf_token": "test-csrf",
+                    "action": "send_code",
+                    "email": "member@example.com",
+                },
+            )
+
+        for _ in range(5):
+            response = self.client.post(
+                "/forgot-password",
+                data={
+                    "csrf_token": "test-csrf",
+                    "action": "reset_password",
+                    "code": "000000",
+                    "password": "new-strong-password",
+                    "confirm_password": "new-strong-password",
+                },
+            )
+        self.assertIn(b"invalid or has expired", response.data)
+        with app_module.closing(
+            app_module.sqlite3.connect(app_module.app.config["DATABASE"])
+        ) as db:
+            remaining_codes = db.execute(
+                "SELECT COUNT(*) FROM password_reset_tokens"
+            ).fetchone()[0]
+        self.assertEqual(remaining_codes, 0)
 
     def test_password_reset_token_updates_password_and_is_single_use(self):
         with app_module.closing(

@@ -51,10 +51,24 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
                 token_hash TEXT NOT NULL UNIQUE,
-                expires_at INTEGER NOT NULL
+                expires_at INTEGER NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0
             )
             """
         )
+        token_columns = {
+            column[1]
+            for column in db.execute(
+                "PRAGMA table_info(password_reset_tokens)"
+            ).fetchall()
+        }
+        if "attempts" not in token_columns:
+            db.execute(
+                """
+                ALTER TABLE password_reset_tokens
+                ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0
+                """
+            )
         db.commit()
 
 
@@ -104,31 +118,38 @@ def load_risk_classifier():
 
 
 def password_reset_email_configured():
-    return bool(
-        os.environ.get("SMTP_HOST", "").strip()
-        and os.environ.get("SMTP_FROM", "").strip()
-        and os.environ.get("PUBLIC_BASE_URL", "").strip()
-    )
-
-
-def send_password_reset_email(email, token):
-    host = os.environ["SMTP_HOST"].strip()
-    sender = os.environ["SMTP_FROM"].strip()
     username = os.environ.get("SMTP_USERNAME", "").strip()
     password = os.environ.get("SMTP_PASSWORD", "")
-    base_url = os.environ["PUBLIC_BASE_URL"].strip().rstrip("/")
-    port = int(os.environ.get("SMTP_PORT", "587"))
-    if bool(username) != bool(password):
-        raise ValueError("Configure both SMTP_USERNAME and SMTP_PASSWORD, or neither.")
+    return bool(username and password)
 
-    reset_url = f"{base_url}{url_for('reset_password', token=token)}"
+
+def password_reset_code_hash(code):
+    return hmac.new(
+        app.config["SECRET_KEY"].encode("utf-8"),
+        code.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def send_password_reset_email(email, code):
+    host = os.environ.get("SMTP_HOST", "smtp-mail.outlook.com").strip()
+    username = os.environ.get("SMTP_USERNAME", "").strip()
+    password = os.environ.get("SMTP_PASSWORD", "")
+    sender = os.environ.get("SMTP_FROM", username).strip()
+    port = int(os.environ.get("SMTP_PORT", "587"))
+    if not username or not password:
+        raise ValueError("Configure both SMTP_USERNAME and SMTP_PASSWORD.")
+    if not host or not sender:
+        raise ValueError("Configure an SMTP server and sender email address.")
+
     message = EmailMessage()
-    message["Subject"] = "Reset your GrowWell password"
+    message["Subject"] = "Your GrowWell password reset code"
     message["From"] = sender
     message["To"] = email
     message.set_content(
         "We received a request to reset your GrowWell password.\n\n"
-        f"Use this one-time link within 30 minutes:\n{reset_url}\n\n"
+        f"Your six-digit verification code is: {code}\n\n"
+        "This code expires in 10 minutes and can only be used once.\n\n"
         "If you did not request this, you can ignore this email."
     )
 
@@ -180,6 +201,88 @@ def forgot_password():
     if request.method == "POST":
         if not valid_csrf_token():
             error = "Your form expired. Refresh the page and try again."
+        elif request.form.get("action") == "reset_password":
+            email = session.get("password_reset_email", "")
+            code = request.form.get("code", "").strip()
+            password = request.form.get("password", "")
+            confirm_password = request.form.get("confirm_password", "")
+
+            if len(password) < 8:
+                error = "Password must be at least 8 characters long."
+            elif password != confirm_password:
+                error = "Passwords do not match."
+            else:
+                now = int(datetime.now(timezone.utc).timestamp())
+                with closing(sqlite3.connect(app.config["DATABASE"])) as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    reset_code = db.execute(
+                        """
+                        SELECT reset.user_id, reset.token_hash, reset.expires_at,
+                               reset.attempts
+                        FROM password_reset_tokens AS reset
+                        JOIN users ON users.id = reset.user_id
+                        WHERE users.email = ?
+                        """,
+                        (email,),
+                    ).fetchone()
+
+                    if (
+                        reset_code is None
+                        or reset_code[2] <= now
+                        or reset_code[3] >= 5
+                    ):
+                        if reset_code is not None:
+                            db.execute(
+                                "DELETE FROM password_reset_tokens WHERE user_id = ?",
+                                (reset_code[0],),
+                            )
+                        db.commit()
+                        session.pop("password_reset_email", None)
+                        error = "That code is invalid or has expired. Request a new code."
+                    elif (
+                        len(code) != 6
+                        or not code.isascii()
+                        or not code.isdigit()
+                        or not hmac.compare_digest(
+                            reset_code[1], password_reset_code_hash(code)
+                        )
+                    ):
+                        attempts = reset_code[3] + 1
+                        if attempts >= 5:
+                            db.execute(
+                                "DELETE FROM password_reset_tokens WHERE user_id = ?",
+                                (reset_code[0],),
+                            )
+                            session.pop("password_reset_email", None)
+                        else:
+                            db.execute(
+                                """
+                                UPDATE password_reset_tokens SET attempts = ?
+                                WHERE user_id = ?
+                                """,
+                                (attempts, reset_code[0]),
+                            )
+                        db.commit()
+                        error = "That code is invalid or has expired. Request a new code."
+                    else:
+                        db.execute(
+                            "UPDATE users SET password_hash = ? WHERE id = ?",
+                            (
+                                generate_password_hash(password),
+                                reset_code[0],
+                            ),
+                        )
+                        db.execute(
+                            "DELETE FROM password_reset_tokens WHERE user_id = ?",
+                            (reset_code[0],),
+                        )
+                        db.commit()
+
+                if error is None:
+                    session.pop("password_reset_email", None)
+                    flash("Password updated. Please sign in.", "success")
+                    return redirect(url_for("login"))
+
         elif not password_reset_email_configured():
             error = (
                 "Password reset email is not configured. Please contact the "
@@ -187,6 +290,7 @@ def forgot_password():
             )
         else:
             email = request.form.get("email", "").strip().lower()
+            session["password_reset_email"] = email
             with closing(sqlite3.connect(app.config["DATABASE"])) as db:
                 db.row_factory = sqlite3.Row
                 user = db.execute(
@@ -194,12 +298,12 @@ def forgot_password():
                 ).fetchone()
 
             if user is not None:
-                token = secrets.token_urlsafe(32)
-                token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+                code = f"{secrets.randbelow(1_000_000):06d}"
+                token_hash = password_reset_code_hash(code)
                 expires_at = int(
                     (
                         datetime.now(timezone.utc)
-                        + timedelta(minutes=30)
+                        + timedelta(minutes=10)
                     ).timestamp()
                 )
                 with closing(sqlite3.connect(app.config["DATABASE"])) as db:
@@ -210,15 +314,15 @@ def forgot_password():
                     db.execute(
                         """
                         INSERT INTO password_reset_tokens
-                            (user_id, token_hash, expires_at)
-                        VALUES (?, ?, ?)
+                        (user_id, token_hash, expires_at, attempts)
+                        VALUES (?, ?, ?, 0)
                         """,
                         (user["id"], token_hash, expires_at),
                     )
                     db.commit()
 
                 try:
-                    send_password_reset_email(user["email"], token)
+                    send_password_reset_email(user["email"], code)
                 except (OSError, smtplib.SMTPException, ValueError, KeyError):
                     app.logger.exception("Password reset email could not be sent")
                     with closing(sqlite3.connect(app.config["DATABASE"])) as db:
@@ -238,7 +342,10 @@ def forgot_password():
     return render_template(
         "forgot_password.html",
         reset_email_configured=password_reset_email_configured(),
-        submitted=False,
+        submitted=(
+            request.method == "POST"
+            and request.form.get("action") == "reset_password"
+        ),
         error=error,
     )
 

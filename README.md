@@ -36,12 +36,21 @@ The four-field quick screen assumes no bilateral pitting oedema and the age-appr
 Accounts are stored in `instance/users.sqlite3`; passwords are stored as hashes. Set a stable `SECRET_KEY` environment variable before deployment.
 
 ### Password recovery
-The sign-in page includes a one-time password-reset link flow. To enable email delivery, configure these environment variables before starting the app:
+The sign-in page includes a six-digit email verification code flow. Codes expire after 10 minutes, can be tried at most five times, and are stored only as keyed hashes. Email sending requires `SMTP_USERNAME` and `SMTP_PASSWORD`:
 
-- `SMTP_HOST`: SMTP server hostname.
+- `SMTP_USERNAME`: full mailbox email address used to authenticate.
+- `SMTP_PASSWORD`: mailbox or provider-issued app password.
+- `SMTP_HOST`: SMTP server hostname (defaults to `smtp-mail.outlook.com`).
 - `SMTP_PORT`: SMTP submission port (defaults to `587`; STARTTLS is used).
-- `SMTP_FROM`: sender address.
-- `SMTP_USERNAME` and `SMTP_PASSWORD`: both required when the SMTP server requires authentication.
-- `PUBLIC_BASE_URL`: public application origin, for example `https://your-domain.example`.
+- `SMTP_FROM`: sender address (defaults to `SMTP_USERNAME`).
 
-Keep SMTP credentials out of source control. Reset tokens are stored only as hashes, expire after 30 minutes, and are invalidated after use. If mail settings are missing, the recovery page explains that email recovery is unavailable and directs users to the site administrator.
+Keep SMTP credentials out of source control and set a stable `SECRET_KEY` in production. If mail settings are missing, the recovery page explains that email recovery is unavailable and directs users to the site administrator. Previously issued reset links remain valid until they expire.
+
+#### Render with a personal Outlook mailbox
+In the Render dashboard, open the web service, select **Environment**, and add:
+
+- `SMTP_USERNAME`: the same full Outlook email address.
+- `SMTP_PASSWORD`: the mailbox password, or an app password if two-step verification is enabled and Outlook provides app passwords.
+- `SECRET_KEY`: a long, random value that remains unchanged between deploys.
+
+The app defaults to Outlook's `smtp-mail.outlook.com` on port `587`, and uses `SMTP_USERNAME` as the sender, so `SMTP_HOST`, `SMTP_PORT`, and `SMTP_FROM` do not need to be added for this setup. Save the environment settings and redeploy/restart the service. Keep the password and secret only in Render's environment settings, not in GitHub or source files. Outlook account security settings may block SMTP AUTH; if SMTP login is rejected, enable authenticated SMTP for the mailbox if available or use a mail provider that supports SMTP credentials.
